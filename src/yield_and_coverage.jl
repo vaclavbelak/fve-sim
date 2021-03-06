@@ -1,24 +1,66 @@
 using CSV
 using DataFrames
-
-data = DataFrame(CSV.File("/Users/vaclav/Downloads/klodzsko_1.csv", skipto=19, header=18))
-filter!(row -> row.Month ≠ "Totals", data)
-rename!(data, ["AC System Output (W)" => "Yield"])
-select!(data, [:Month, :Day, :Yield])
-data.Month = parse.(Int8, data.Month)
-data.Day = parse.(Int8, data.Day)
-
-data.Yield = data.Yield .* 3
-
-agg_data = combine(groupby(data, [:Month, :Day]), :Yield .=> sum => :Yield)
-print(combine(groupby(agg_data, :Month), :Yield => (x -> (sum(x .>= 8000) / length(x), sum(x .>= 6000) / length(x)))))
-
 using Gadfly
+using Dates: monthname
+using Statistics: std
+
+installedpower = 14 * 0.330
+const tuv = 8
+const household = 2
+const aku = 16
+const off_season_cons = household + tuv
+const season_cons = household + tuv + aku
+
+# parses the hourly data for 1kWp from https://pvwatts.nrel.gov/
+function readdata(path::String)
+    data = DataFrame(CSV.File(path, skipto=19, header=18))
+    filter!(row -> row.Month ≠ "Totals", data)
+    data.Hour = parse.(Int8, data.Hour)
+    filter!(row -> row.Hour in 9:18, data)
+    rename!(data, ["AC System Output (W)" => "one_kwp_yield"])
+    select!(data, [:Month, :Day, :one_kwp_yield])
+    data.Month = parse.(Int8, data.Month)
+    data.Day = parse.(Int8, data.Day)
+    data.Yield = data.one_kwp_yield .* installedpower ./ 1000
+
+    return data
+end
+
+data = readdata(joinpath(@__DIR__, "../data/praha.csv"))
+data = groupby(data, [:Month, :Day])
+data = combine(data, :Yield .=> sum => :Yield)
+
+function stats(prod, month)
+    n = length(prod)
+    # % days covered
+    tuv_cov = sum(prod .> tuv) / n
+    aku_cov = sum(prod .> aku) / n
+    household_cov = sum(prod .> household) / n
+    if month[1] in 6:8
+        overall_cov = sum(prod .> off_season_cons) / n
+        unused_prod = sum(max.(0, prod .- off_season_cons))
+    else
+        overall_cov = sum(prod .> season_cons) / n
+        unused_prod = sum(max.(0, prod .- season_cons))
+    end
+    return (household_cov = household_cov,
+            tuv_cov = tuv_cov,
+            aku_cov = aku_cov,
+            overall_cov = overall_cov,
+            overall_util = (sum(prod) - unused_prod) / sum(prod),
+            overall_used = sum(prod) - unused_prod,
+            overall_prod = sum(prod),
+            unused_prod = unused_prod)
+end
+
+data_stats = combine(groupby(agg_data, :Month), [:Yield, :Month] => stats => AsTable)
+print(data_stats)
+print("Overall utilisation: $(sum(data_stats.overall_used) / sum(data_stats.overall_prod))")
+print("Production: $(sum(data_stats.overall_prod))")
+print("Usage: $(sum(data_stats.overall_used))")
 
 
-plot(agg_data[agg_data.Month .== 4,:], x=:Yield, Geom.density)
-plot(agg_data[agg_data.Month .== 5,:], x=:Yield, Geom.density)
-plot(agg_data[agg_data.Month .== 6,:], x=:Yield, Geom.density)
-plot(agg_data[agg_data.Month .== 7,:], x=:Yield, Geom.density)
-plot(agg_data[agg_data.Month .== 8,:], x=:Yield, Geom.density)
-plot(agg_data[agg_data.Month .== 9,:], x=:Yield, Geom.density)
+
+for month in 4:9
+    render(plot(agg_data[agg_data.Month .== month,:], x=:Yield, Geom.histogram, Guide.title(monthname(month))))
+end
