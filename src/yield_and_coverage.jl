@@ -26,10 +26,6 @@ function readdata(path::String)
     return data
 end
 
-data = readdata(joinpath(@__DIR__, "../data/praha.csv"))
-data = groupby(data, [:Month, :Day])
-data = combine(data, :Yield .=> sum => :Yield)
-
 function stats(prod, month)
     n = length(prod)
     # % days covered
@@ -53,14 +49,24 @@ function stats(prod, month)
             unused_prod = unused_prod)
 end
 
-data_stats = combine(groupby(agg_data, :Month), [:Yield, :Month] => stats => AsTable)
+data = readdata(joinpath(@__DIR__, "data/praha.csv"))
+data = groupby(data, [:Month, :Day])
+data = combine(data, :Yield .=> sum => :Yield)
+
+data_stats = combine(groupby(data, :Month), [:Yield, :Month] => stats => AsTable)
 print(data_stats)
 print("Overall utilisation: $(sum(data_stats.overall_used) / sum(data_stats.overall_prod))")
 print("Production: $(sum(data_stats.overall_prod))")
 print("Usage: $(sum(data_stats.overall_used))")
 
+data = readdata(joinpath(@__DIR__, "data/klodzko.csv"))
+data = groupby(data, [:Month, :Day])
+data = combine(data, :Yield .=> sum => :Yield)
 
+data_stats = combine(groupby(data, :Month), [:Yield, :Month] => stats => AsTable)
+print(data_stats)
+print("Overall utilisation: $(sum(data_stats.overall_used) / sum(data_stats.overall_prod))")
+print("Production: $(sum(data_stats.overall_prod))")
+print("Usage: $(sum(data_stats.overall_used))")
 
-for month in 4:9
-    render(plot(agg_data[agg_data.Month .== month,:], x=:Yield, Geom.histogram, Guide.title(monthname(month))))
-end
+plot(filter(r -> r.Month in 6:8, data), x = :Yield, xgroup = :Month, Geom.subplot_grid(Geom.histogram))
