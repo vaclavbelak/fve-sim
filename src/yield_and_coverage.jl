@@ -49,7 +49,7 @@ function stats(prod, month)
             unused_prod = unused_prod)
 end
 
-data = readdata(joinpath(@__DIR__, "data/praha.csv"))
+data = readdata(joinpath(@__DIR__, "../data/praha.csv"))
 data = groupby(data, [:Month, :Day])
 data = combine(data, :Yield .=> sum => :Yield)
 
@@ -59,7 +59,7 @@ print("Overall utilisation: $(sum(data_stats.overall_used) / sum(data_stats.over
 print("Production: $(sum(data_stats.overall_prod))")
 print("Usage: $(sum(data_stats.overall_used))")
 
-data = readdata(joinpath(@__DIR__, "data/klodzko.csv"))
+data = readdata(joinpath(@__DIR__, "../data/klodzko.csv"))
 data = groupby(data, [:Month, :Day])
 data = combine(data, :Yield .=> sum => :Yield)
 
