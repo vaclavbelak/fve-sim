@@ -6,18 +6,22 @@ using InteractiveUtils
 
 # ╔═╡ a844dad2-8036-11eb-370b-7d3a859cdbb0
 begin
+	import Pkg
+	Pkg.activate(mktempdir())
+	Pkg.add(["CSV", "DataFrames", "Gadfly", "HTTP"])
 	using CSV
 	using DataFrames
 	using Gadfly
 	using Printf: @sprintf
-	using PlutoUI
 	using Statistics: mean
+	import HTTP
 end
 
 # ╔═╡ 1593295c-8037-11eb-335f-5369e91a98d6
 begin
-	function readdata(path::String; installedpower:: Float64, includedhours:: UnitRange{Int64})
-		data = DataFrame(CSV.File(path, skipto=19, header=18))
+	function readdata(dataset::String; installedpower:: Float64, includedhours:: UnitRange{Int64})
+		res = HTTP.get("https://raw.githubusercontent.com/vaclavbelak/fve-sim/master/data/$(dataset).csv")	
+		data = CSV.read(IOBuffer(String(res.body)), DataFrame, skipto=19, header=18)
 		filter!(row -> row.Month ≠ "Totals", data)
 		data.Hour = parse.(Int8, data.Hour)
 		filter!(row -> row.Hour in includedhours, data)
@@ -63,7 +67,7 @@ end
 
 # ╔═╡ 4717ca7c-81a5-11eb-29c5-8727baeec27f
 begin
-	datafile = joinpath(@__DIR__, "../data/klodzko.csv") # praha,bielsko-biala,klodzko 
+	dataset = "klodzko" # praha,bielsko-biala,klodzko 
 	vt = 4.3
 	nt = 2.3
 	house = 2 # 0
@@ -78,7 +82,7 @@ end
 
 # ╔═╡ d2ff2cc0-8037-11eb-11e3-c94d9b244503
 begin
-	data = readdata(datafile; installedpower = power, includedhours = hours)
+	data = readdata(dataset; installedpower = power, includedhours = hours)
 	data = groupby(data, [:Month, :Day])
 	data = combine(data, :Yield .=> sum => :Yield)
 
