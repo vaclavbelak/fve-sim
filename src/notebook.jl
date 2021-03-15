@@ -13,15 +13,14 @@ begin
 	using DataFrames
 	using Gadfly
 	using Printf: @sprintf
-	using Statistics: mean
+	using Statistics: mean, median
 	import HTTP
 end
 
 # ╔═╡ 1593295c-8037-11eb-335f-5369e91a98d6
 begin
 	function readdata(dataset::String; installedpower:: Float64, includedhours:: UnitRange{Int64})
-		res = HTTP.get("https://raw.githubusercontent.com/vaclavbelak/fve-sim/master/data/$(dataset).csv")	
-		data = CSV.read(IOBuffer(String(res.body)), DataFrame, skipto=19, header=18)
+		data = DataFrame(CSV.File(joinpath(@__DIR__, "../data/$(dataset).csv"), skipto=19, header=18))
 		filter!(row -> row.Month ≠ "Totals", data)
 		data.Hour = parse.(Int8, data.Hour)
 		filter!(row -> row.Hour in includedhours, data)
@@ -44,21 +43,24 @@ begin
 		tuv_used = tuv .+ min.(0, prod .- house_used .- tuv)
 		if month[1] in off_season
 			overall_cov = sum(prod .>= (household + tuv)) / n
-			unused_prod = sum(max.(0, prod .- (household + tuv)))
+			unused = max.(0, prod .- (household + tuv))
 			aku_used = 0
 		else
 			overall_cov = sum(prod .>= (household + tuv + aku)) / n
-			unused_prod = sum(max.(0, prod .- (household + tuv + aku)))
+			unused = max.(0, prod .- (household + tuv + aku))
 			aku_used = aku .+ min.(0, prod .- house_used .- tuv_used .- aku)
 		end
 		roundsum = abs∘round∘sum
 		return (house_cov = house_cov,
 				tuv_cov = tuv_cov,
 				overall_cov = overall_cov,
-				overall_util = (sum(prod) - unused_prod) / sum(prod),
-				overall_used = sum(prod) - unused_prod,
+				overall_util = (sum(prod) - sum(unused)) / sum(prod),
+				overall_used = sum(prod) - sum(unused),
 				overall_prod = sum(prod),
-				unused_prod = unused_prod,
+				unused_prod = sum(unused),
+				unused_med = median(unused),
+				unused_mean = mean(unused),
+				unused_max = maximum(unused),
 			    house_used = roundsum(house_used),
 				tuv_used = roundsum(tuv_used),
 				aku_used = roundsum(aku_used))
@@ -71,7 +73,7 @@ begin
 	vt = 4.3
 	nt = 2.3
 	house = 2 # 0
-	tuv =  8
+	tuv = 8
 	aku = 0
 	hours = 8:18
 	off_season = 6:8
@@ -99,7 +101,7 @@ end
 @sprintf "Usage: %u kWh" sum(data_stats.overall_used)
 
 # ╔═╡ b8f4e1f8-8334-11eb-3a85-5153a2b4e692
-@sprintf "Unused: %u kWh" sum(data_stats.unused_prod)
+@sprintf "Unused: %u kWh overall, %u kWh (%u%%) off season, %u kWh in season" sum(data_stats.unused_prod) sum(data_stats.unused_prod[off_season]) sum(data_stats.unused_prod[off_season]) / sum(data_stats.unused_prod) * 100 sum(data_stats.unused_prod) - sum(data_stats.unused_prod[off_season])
 
 # ╔═╡ 136be666-81db-11eb-1414-735a5e0a6387
 @sprintf "TUV: %u kWh" sum(data_stats.tuv_used)
@@ -129,10 +131,20 @@ plot(stack(data_stats[:, [:Month, :house_used, :tuv_used, :aku_used, :unused_pro
 # ╔═╡ 40391c90-81cc-11eb-1d94-b767c611a16f
 plot(data_stats, x = :Month, y = :overall_util, Geom.line(), Guide.xticks(ticks = 1:12), Guide.yticks(ticks = .1:.1:1), Guide.title("Overall utilisation"), Guide.ylabel("Utilisation Fraction"))
 
+# ╔═╡ b2d18054-8575-11eb-0c9d-2d1f35ea27ca
+plot(stack(data_stats[:, [:Month, :unused_mean, :unused_med, :unused_max]],
+		   [:unused_mean, :unused_med, :unused_max]),
+	 x = :Month, y = :value, color = :variable, Geom.bar(position = :dodge), Guide.xticks(ticks = 1:12), Guide.yticks(ticks = 1:10), Guide.title("Unused Energy per Day"), Guide.ylabel("kWh"))
+
+# ╔═╡ 5c4498f6-8576-11eb-1af4-917b0c976305
+md"""
+Simulation of different installed total power
+"""
+
 # ╔═╡ 5123e2e0-8242-11eb-0f10-b9a34d00c6fa
 begin 
 	function agg_stats(power, hours, aku, house, tuv, off_season)
-		data = readdata(joinpath(datafile); installedpower = power, includedhours = hours)
+		data = readdata(dataset; installedpower = power, includedhours = hours)
 		data = groupby(data, [:Month, :Day])
 		data = combine(data, :Yield .=> sum => :Yield)
 
@@ -201,6 +213,8 @@ plot(stack(data_stats_overall[:, [:installed_power, :overall_aku, :overall_house
 # ╟─8339434c-8181-11eb-3220-bbc7901d898c
 # ╟─c15f35be-81a4-11eb-3c00-d392ab902b69
 # ╟─40391c90-81cc-11eb-1d94-b767c611a16f
+# ╟─b2d18054-8575-11eb-0c9d-2d1f35ea27ca
+# ╟─5c4498f6-8576-11eb-1af4-917b0c976305
 # ╟─5123e2e0-8242-11eb-0f10-b9a34d00c6fa
 # ╟─968733c8-8249-11eb-3957-c362e6b7b7c4
 # ╟─37ba30f2-838e-11eb-2b69-5d7d19578962
